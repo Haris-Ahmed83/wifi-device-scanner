@@ -42,7 +42,7 @@ def get_arp_table() -> List[Dict]:
                 if match:
                     ip = match.group(1)
                     mac = match.group(2).replace("-", ":")
-                    if mac != "ff:ff:ff:ff:ff:ff" and ip:
+                    if not _is_multicast(ip, mac) and ip:
                         devices.append({"ip": ip, "mac": mac.lower()})
         else:
             result = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=10)
@@ -52,12 +52,23 @@ def get_arp_table() -> List[Dict]:
                 if match:
                     ip = match.group(1)
                     mac = match.group(2).lower()
-                    if mac != "ff:ff:ff:ff:ff:ff":
+                    if not _is_multicast(ip, mac):
                         devices.append({"ip": ip, "mac": mac})
     except Exception:
         pass
 
     return devices
+
+
+def _is_multicast(ip: str, mac: str) -> bool:
+    try:
+        if ipaddress.IPv4Address(ip).is_multicast:
+            return True
+    except Exception:
+        pass
+    if mac.startswith("01:00:5e"):
+        return True
+    return False
 
 
 def arp_scan(network: str = None) -> List[Dict]:
@@ -81,8 +92,11 @@ def arp_scan(network: str = None) -> List[Dict]:
         answered = srp(packet, timeout=3, verbose=False)[0]
 
         for sent, received in answered:
-            devices.append({"ip": received.psrc, "mac": received.hwsrc.lower()})
+            ip = received.psrc
+            mac = received.hwsrc.lower()
+            if not _is_multicast(ip, mac):
+                devices.append({"ip": ip, "mac": mac})
     except Exception:
         devices = get_arp_table()
 
-    return devices
+    return [d for d in devices if not _is_multicast(d["ip"], d["mac"])]

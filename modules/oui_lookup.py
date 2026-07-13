@@ -1732,6 +1732,7 @@ OUI_DATABASE = {
     "C0:1C:E7": "Honor",
     "C0:1D:F8": "LG",
     "C0:1E:09": "Dell",
+    "C0:8B:05": "HUAWEI TECHNOLOGIES CO.,LTD",
     "C4:00:2B": "Dell",
     "C4:01:3C": "Samsung",
     "C4:02:4D": "Xiaomi",

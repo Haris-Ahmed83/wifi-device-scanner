@@ -41,6 +41,15 @@ def estimate_os_from_ttl(ttl: int) -> str:
     return "Unknown"
 
 
+def _is_likely_gateway_ip(ip: str) -> bool:
+    parts = ip.split(".")
+    if len(parts) == 4:
+        last = parts[3]
+        if last == "1" or last == "254":
+            return True
+    return False
+
+
 def classify_device_type(
     ip: str,
     mac: str,
@@ -58,12 +67,6 @@ def classify_device_type(
     device_type = "Unknown Device"
     confidence = "Low"
     details = []
-
-    if is_gateway:
-        device_type = "Router/Gateway"
-        confidence = "High"
-        details.append("Gateway IP address")
-        return {"type": device_type, "os": os_guess, "confidence": confidence, "details": details}
 
     router_keywords = ["tp-link", "tplink", "d-link", "dlink", "netgear", "linksys",
                        "asus", "cisco", "huawei", "zte", "zyxel", "arcadyan",
@@ -87,6 +90,23 @@ def classify_device_type(
     has_ssh = 22 in open_port_numbers
     has_http = 80 in open_port_numbers or 443 in open_port_numbers or 8080 in open_port_numbers
     has_upnp = 1900 in open_port_numbers
+    has_dns = 53 in open_port_numbers
+    has_dhcp = 67 in open_port_numbers or 68 in open_port_numbers
+    is_router_ip = is_gateway or _is_likely_gateway_ip(ip)
+    only_http = len(open_ports) == 1 and has_http
+
+    if is_gateway or (is_router_ip and only_http):
+        device_type = "Router/Network Device"
+        confidence = "High" if is_gateway else "Medium"
+        if is_gateway:
+            details.append("Gateway IP address")
+        else:
+            details.append(f"Likely gateway (IP ends in .{ip.split('.')[-1]})")
+        if has_http:
+            details.append("Web interface detected (port 80/443)")
+        if vendor != "Unknown":
+            details.append(f"Vendor: {vendor}")
+        return {"type": device_type, "os": os_guess, "confidence": confidence, "details": details}
 
     if has_rtsp and has_http and has_upnp:
         device_type = "IP Camera"
@@ -97,7 +117,7 @@ def classify_device_type(
         confidence = "High"
         details.append("IPP/JetDirect port open")
     elif has_rtsp and has_upnp:
-        if any(k in vendor_lower for k in tv_keywords) or os_guess == "Linux/Unix/Android/iOS":
+        if any(k in vendor_lower for k in tv_keywords):
             device_type = "Smart TV / Media Device"
             confidence = "Medium"
             details.append("RTSP + UPnP ports open")
@@ -121,6 +141,16 @@ def classify_device_type(
         device_type = "Windows Device"
         confidence = "Medium"
         details.append("RDP port open")
+    elif only_http and (vendor == "Unknown" or any(k in vendor_lower for k in router_keywords)):
+        device_type = "Router/Network Device"
+        confidence = "Medium"
+        details.append("Web interface only (likely router/network device)")
+        if vendor != "Unknown":
+            details.append(f"Vendor: {vendor}")
+    elif has_http and ttl is not None and ttl > 64:
+        device_type = "Network Device"
+        confidence = "Low"
+        details.append(f"HTTP port open, TTL suggests network device")
 
     if device_type == "Unknown Device":
         if vendor == "Unknown" and not open_ports:
@@ -148,7 +178,14 @@ def classify_device_type(
         else:
             device_type = f"{vendor} Device"
             confidence = "Low"
-            details.append(f"Based on MAC vendor: {vendor}")
+            if vendor != "Unknown":
+                details.append(f"Based on MAC vendor: {vendor}")
+            elif open_ports:
+                svc = ", ".join(f"port {p}" for p in open_port_numbers[:3])
+                details.append(f"Open ports: {svc}")
+                device_type = "Unknown Device"
+            else:
+                details.append("No identification data available")
 
     return {"type": device_type, "os": os_guess, "confidence": confidence, "details": details}
 
