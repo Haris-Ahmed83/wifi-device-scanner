@@ -3,9 +3,7 @@ title: WiFi Network Device Scanner
 emoji: "\U0001F6E1"
 colorFrom: blue
 colorTo: indigo
-sdk: streamlit
-sdk_version: 1.59.2
-app_file: streamlit_app.py
+sdk: static
 pinned: false
 license: mit
 ---
