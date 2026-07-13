@@ -6,6 +6,24 @@ import platform
 from typing import List, Dict, Optional, Tuple
 
 
+def resolve_hostname(ip: str) -> Optional[str]:
+    try:
+        name, _, _ = socket.gethostbyaddr(ip)
+        if name and not name.endswith(".in-addr.arpa"):
+            return name.split(".")[0]
+    except Exception:
+        pass
+    if platform.system().lower() == "windows":
+        try:
+            result = subprocess.run(["nbtstat", "-A", ip], capture_output=True, text=True, timeout=5)
+            match = re.search(r"^\s+(\S+)\s+<00>\s+UNIQUE", result.stdout, re.MULTILINE)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+    return None
+
+
 def get_local_network_info() -> Optional[Dict]:
     try:
         hostname = socket.gethostname()

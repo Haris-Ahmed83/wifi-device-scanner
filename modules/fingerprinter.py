@@ -4,6 +4,7 @@ import re
 from typing import Dict, List, Optional
 from modules.oui_lookup import lookup_vendor
 from modules.port_scanner import quick_scan
+from modules.network_scanner import resolve_hostname
 
 
 def get_ttl(ip: str) -> Optional[int]:
@@ -199,9 +200,12 @@ def fingerprint_device(ip: str, mac: str, gateway_ip: str = None) -> Dict:
 
     classification = classify_device_type(ip, mac, vendor, ttl, open_ports, is_gateway)
 
+    hostname = resolve_hostname(ip)
+
     return {
         "ip": ip,
         "mac": mac,
+        "hostname": hostname,
         "vendor": vendor,
         "ttl": ttl,
         "os": classification["os"],
