@@ -6,7 +6,7 @@ colorTo: indigo
 sdk: streamlit
 sdk_version: 1.59.2
 app_file: streamlit_app.py
-pinned: false
+pinned: true
 license: mit
 ---
 
