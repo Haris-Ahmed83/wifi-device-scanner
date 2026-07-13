@@ -57,10 +57,12 @@ def get_arp_table() -> List[Dict]:
     except Exception:
         pass
 
-    return devices
+    return _dedup_and_filter(devices)
 
 
 def _is_multicast(ip: str, mac: str) -> bool:
+    if mac == "ff:ff:ff:ff:ff:ff":
+        return True
     try:
         if ipaddress.IPv4Address(ip).is_multicast:
             return True
@@ -79,7 +81,7 @@ def arp_scan(network: str = None) -> List[Dict]:
         if net_info and net_info["network"] != "unknown":
             network = net_info["network"]
         else:
-            return get_arp_table()
+            return _dedup_and_filter(get_arp_table())
 
     try:
         net = ipaddress.IPv4Network(network, strict=False)
@@ -99,4 +101,16 @@ def arp_scan(network: str = None) -> List[Dict]:
     except Exception:
         devices = get_arp_table()
 
-    return [d for d in devices if not _is_multicast(d["ip"], d["mac"])]
+    return _dedup_and_filter(devices)
+
+
+def _dedup_and_filter(devices: List[Dict]) -> List[Dict]:
+    seen = set()
+    result = []
+    for d in devices:
+        if not _is_multicast(d["ip"], d["mac"]):
+            key = (d["ip"], d["mac"])
+            if key not in seen:
+                seen.add(key)
+                result.append(d)
+    return result
