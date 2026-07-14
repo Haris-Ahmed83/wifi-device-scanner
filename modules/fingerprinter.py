@@ -51,6 +51,27 @@ def _is_likely_gateway_ip(ip: str) -> bool:
     return False
 
 
+def _is_private_mac(mac: str) -> bool:
+    clean = mac.lower().replace(":", "").replace("-", "")
+    if len(clean) < 2:
+        return False
+    second_char = clean[1]
+    return second_char in "2367abef"
+
+
+def _shorten_vendor(vendor: str) -> str:
+    v = vendor
+    for suffix in [" TECHNOLOGIES CO.,LTD", " TECHNOLOGY CO.,LTD", " COMMUNICATIONS CO LTD",
+                    " CORPORATION", " TECHNOLOGY", " TECHNOLOGIES", " INCORPORATED",
+                    " INC.", " LTD", " CO.,LTD", " PTE. LTD.", " PTE LTD",
+                    " SAS", " GMBH", " LLC", " CORP.", " CO."]:
+        v = v.replace(suffix, "")
+    parts = v.strip().split()
+    if len(parts) > 3:
+        v = " ".join(parts[:3])
+    return v.strip() or vendor.split()[0]
+
+
 def classify_device_type(
     ip: str,
     mac: str,
@@ -71,17 +92,21 @@ def classify_device_type(
 
     router_keywords = ["tp-link", "tplink", "d-link", "dlink", "netgear", "linksys",
                        "cisco", "zte", "zyxel", "arcadyan",
-                       "sagemcom", "mikrotik", "ubiquiti", "broadcom"]
+                       "sagemcom", "mikrotik", "ubiquiti", "broadcom",
+                       "cloud network", "cloud"]
     phone_keywords = ["tecno", "infinix", "xiaomi", "redmi", "realme", "oppo",
                       "oneplus", "vivo", "honor", "samsung", "huawei", "htc",
                       "nokia", "motorola", "lg", "sony", "google"]
     laptop_keywords = ["dell", "hp", "hewlett", "lenovo", "apple", "asus",
-                       "acer", "toshiba", "microsoft", "fujitsu", "msi"]
+                       "acer", "toshiba", "microsoft", "fujitsu", "msi",
+                       "intel", "azurewave", "liteon"]
     printer_keywords = ["hp", "epson", "canon", "brother", "kyocera", "xerox",
                         "samsung", "oki", "printer"]
     camera_keywords = ["hikvision", "dahua", "axis", "geovision", "camera", "cctv"]
     tv_keywords = ["samsung", "lg", "sony", "tcl", "hisense", "panasonic",
                    "philips", "xiaomi", "vizio", "tv", "television"]
+    nas_keywords = ["cloud network", "seagate", "western digital", "wd ",
+                    "synology", "qnap", "netapp", "drobo", "thecus"]
 
     has_rtsp = 554 in open_port_numbers
     has_ipp = 631 in open_port_numbers
@@ -154,10 +179,13 @@ def classify_device_type(
         details.append(f"HTTP port open, TTL suggests network device")
 
     if device_type == "Unknown Device":
+        has_rpc = 135 in open_port_numbers
+        ttl_windows = (ttl and 64 < ttl <= 128)
+
         if vendor == "Unknown" and not open_ports:
-            device_type = "Mobile Device / Unknown"
-            confidence = "Low"
-            details.append("No open ports detected, likely a mobile device")
+            device_type = "Smartphone"
+            confidence = "Medium"
+            details.append("No open ports, private/random MAC — likely a mobile device")
         elif any(k in vendor_lower for k in phone_keywords):
             device_type = "Smartphone"
             confidence = "Medium"
@@ -166,6 +194,13 @@ def classify_device_type(
                 details.append(f"Likely {os_guess}")
         elif any(k in vendor_lower for k in laptop_keywords):
             device_type = "Laptop/Desktop"
+            confidence = "Medium"
+            if has_rpc:
+                confidence = "High"
+                details.append("RPC port open")
+            details.append(f"Vendor: {vendor}")
+        elif any(k in vendor_lower for k in nas_keywords):
+            device_type = "NAS / Network Storage"
             confidence = "Medium"
             details.append(f"Vendor: {vendor}")
         elif any(k in vendor_lower for k in tv_keywords):
@@ -176,8 +211,17 @@ def classify_device_type(
             device_type = "Router/Network Device"
             confidence = "High"
             details.append(f"Vendor: {vendor}")
+        elif has_rpc or has_smb:
+            device_type = "Windows Laptop/Desktop"
+            confidence = "Medium"
+            details.append("RPC/SMB port open — likely Windows device")
+        elif ttl_windows and not open_ports:
+            device_type = "Windows Laptop/Desktop"
+            confidence = "Medium"
+            details.append(f"TTL {ttl} suggests Windows, no open ports")
         else:
-            device_type = f"{vendor} Device"
+            short = _shorten_vendor(vendor)
+            device_type = f"{short} Device"
             confidence = "Low"
             if vendor != "Unknown":
                 details.append(f"Based on MAC vendor: {vendor}")
@@ -202,6 +246,12 @@ def fingerprint_device(ip: str, mac: str, gateway_ip: str = None) -> Dict:
 
     hostname = resolve_hostname(ip)
 
+    details = classification["details"]
+    if vendor == "Unknown" and _is_private_mac(mac):
+        details = [d for d in details if "private" not in d.lower()]
+        if not details:
+            details = ["Private/random MAC — likely a mobile device"]
+
     return {
         "ip": ip,
         "mac": mac,
@@ -211,6 +261,6 @@ def fingerprint_device(ip: str, mac: str, gateway_ip: str = None) -> Dict:
         "os": classification["os"],
         "device_type": classification["type"],
         "confidence": classification["confidence"],
-        "details": classification["details"],
+        "details": details,
         "open_ports": open_ports,
     }
