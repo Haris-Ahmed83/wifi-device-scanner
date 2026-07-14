@@ -3,6 +3,7 @@ let deviceList = [];
 let topologyNetwork = null;
 let historyChart = null;
 let historyData = { labels: [], counts: [] };
+let blockedIps = new Set();
 
 function getDeviceIcon(type) {
   const t = (type || '').toLowerCase();
@@ -54,30 +55,36 @@ function renderDevices() {
   }
   grid.innerHTML = deviceList.map((d, i) => {
     const icon = getDeviceIcon(d.device_type);
-    const hostname = d.hostname || d.ip || '?';
+    const hostname = d.hostname || d.upnp_server || d.mdns_name || d.ip || '?';
     const ports = formatPorts(d.open_ports);
     const details = (d.details || []).join(' | ');
+    const isBlocked = blockedIps.has(d.ip);
     return `
-      <div class="device-card" onclick="toggleDevice(${i})">
-        <div class="card-header">
+      <div class="device-card">
+        <div class="card-header" onclick="toggleDevice(${i})">
           <span class="card-icon">${icon}</span>
           <span class="card-hostname">${hostname}</span>
           ${confidenceBadge(d.confidence)}
         </div>
-        <div class="card-meta">
+        <div class="card-meta" onclick="toggleDevice(${i})">
           <span class="card-ip">${d.ip || '?'}</span>
           <span class="card-type">${d.device_type || 'Unknown'}</span>
         </div>
         <div class="card-details" id="detail-${i}" style="display:none">
           <div class="detail-row"><span class="detail-label">MAC</span><code>${d.mac || '?'}</code></div>
           <div class="detail-row"><span class="detail-label">Vendor</span>${d.vendor || 'Unknown'}</div>
+          <div class="detail-row"><span class="detail-label">Name</span>${d.upnp_server || d.mdns_name || d.hostname || 'N/A'}</div>
           <div class="detail-row"><span class="detail-label">OS</span>${d.os || 'Unknown'} ${d.ttl ? '(TTL: ' + d.ttl + ')' : ''}</div>
           <div class="detail-row"><span class="detail-label">Ports</span>${ports}</div>
-          <div class="detail-row"><span class="detail-label">Hostname</span>${d.hostname || 'N/A'}</div>
           ${d.mdns_name ? '<div class="detail-row"><span class="detail-label">mDNS</span>' + d.mdns_name + '</div>' : ''}
           ${d.http_title ? '<div class="detail-row"><span class="detail-label">Web Title</span>' + d.http_title + '</div>' : ''}
           ${details ? '<div class="detail-row detail-extra">' + details + '</div>' : ''}
-          ${(d.device_type || '').toLowerCase().includes('router') ? '<div class="detail-row"><a href="http://' + d.ip + '/" target="_blank" class="router-link">\uD83D\uDD12 Open Router Admin</a></div>' : ''}
+          <div class="detail-row card-actions">
+            <button class="block-btn ${isBlocked ? 'blocked' : ''}" onclick="event.stopPropagation(); toggleBlock('${d.ip}', ${i})">
+              ${isBlocked ? '\u2705 Unblock' : '\uD83D\uDEAB Block Internet'}
+            </button>
+            ${(d.device_type || '').toLowerCase().includes('router') ? '<a href="http://' + d.ip + '/" target="_blank" class="router-link">\uD83D\uDD12 Router Admin</a>' : ''}
+          </div>
         </div>
       </div>
     `;
@@ -270,6 +277,33 @@ async function init() {
   });
 
   setInterval(() => loadDevices(), 30000);
+}
+
+async function toggleBlock(ip, idx) {
+  const btn = document.querySelector(`#detail-${idx} .block-btn`);
+  if (!btn) return;
+  const isBlocking = !blockedIps.has(ip);
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    const endpoint = isBlocking ? 'block' : 'unblock';
+    const r = await fetch(`/api/v1/devices/${ip}/${endpoint}`, { method: 'POST' });
+    const result = await r.json();
+    if (result.success || result.netsh?.success) {
+      if (isBlocking) { blockedIps.add(ip); btn.textContent = '\u2705 Unblock'; btn.classList.add('blocked'); }
+      else { blockedIps.delete(ip); btn.textContent = '\uD83D\uDEAB Block Internet'; btn.classList.remove('blocked'); }
+    } else {
+      btn.textContent = isBlocking ? '\uD83D\uDEAB Block Internet' : '\u2705 Unblock';
+      const msg = result.fallback_url
+        ? `Cannot block via ARP. Open Router Admin (${result.fallback_url}) and block MAC: ${result.fallback_mac}`
+        : 'Block failed: ' + (result.message || 'unknown error');
+      alert(msg);
+    }
+  } catch (e) {
+    btn.textContent = blockedIps.has(ip) ? '\u2705 Unblock' : '\uD83D\uDEAB Block Internet';
+    alert('Error: ' + e.message);
+  }
+  btn.disabled = false;
 }
 
 document.addEventListener('DOMContentLoaded', init);

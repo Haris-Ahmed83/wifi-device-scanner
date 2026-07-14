@@ -261,17 +261,31 @@ body {
   height: 100% !important;
 }
 
-.router-link {
-  display: inline-block;
-  margin-top: 6px;
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.block-btn, .router-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 6px 14px;
-  background: var(--primary);
-  color: #fff;
-  text-decoration: none;
+  border: none;
   border-radius: 6px;
   font-size: 0.85rem;
+  cursor: pointer;
   transition: background 0.2s;
+  text-decoration: none;
+  color: #fff;
 }
+.block-btn { background: #ef4444; }
+.block-btn:hover { background: #dc2626; }
+.block-btn.blocked { background: #22c55e; }
+.block-btn.blocked:hover { background: #16a34a; }
+.block-btn:disabled { opacity: 0.6; cursor: wait; }
+.router-link { background: var(--primary); }
 .router-link:hover { background: #2563eb; }
 
 @media (max-width: 768px) {

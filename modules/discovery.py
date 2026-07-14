@@ -65,6 +65,72 @@ async def discover_mdns(timeout: int = 4) -> Dict[str, dict]:
     return services
 
 
+async def discover_upnp(timeout: int = 3) -> Dict[str, dict]:
+    results: Dict[str, dict] = {}
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.settimeout(timeout)
+
+        msearch = (
+            "M-SEARCH * HTTP/1.1\r\n"
+            "HOST: 239.255.255.250:1900\r\n"
+            "MAN: \"ssdp:discover\"\r\n"
+            "MX: 2\r\n"
+            "ST: ssdp:all\r\n"
+            "\r\n"
+        )
+        sock.sendto(msearch.encode(), ("239.255.255.250", 1900))
+
+        while True:
+            try:
+                data, addr = sock.recvfrom(2048)
+                ip = addr[0]
+                body = data.decode("utf-8", errors="replace")
+                name = None
+                server = None
+                usn = None
+                for line in body.split("\r\n"):
+                    l = line.lower()
+                    if l.startswith("server:"):
+                        server = line.split(":", 1)[1].strip()[:80]
+                    elif l.startswith("usn:"):
+                        usn = line.split(":", 1)[1].strip()[:80]
+                    elif l.startswith("st:"):
+                        st = line.split(":", 1)[1].strip()
+                        if not name:
+                            parts = st.split(":")
+                            for p in parts:
+                                if "-" in p or p.isupper():
+                                    name = p
+                                    break
+
+                friendly_name = None
+                location = None
+                for line in body.split("\r\n"):
+                    l = line.lower()
+                    if l.startswith("location:"):
+                        location = line.split(":", 1)[1].strip()
+                    if l.startswith("st:"):
+                        st_val = line.split(":", 1)[1].strip()
+                        device_match = re.search(r":(\w[\w ]+?)(?::|$)", st_val)
+                        if device_match:
+                            friendly_name = device_match.group(1).replace("Device", "").strip()
+
+                if ip not in results:
+                    results[ip] = {
+                        "upnp_server": server or friendly_name or name or "Unknown",
+                        "upnp_location": location,
+                        "upnp_usn": usn,
+                    }
+            except socket.timeout:
+                break
+        sock.close()
+    except Exception as e:
+        logger.debug(f"UPnP error: {e}")
+    return results
+
+
 async def grab_http_title(ip: str, port: int = 80, timeout: float = 2) -> Optional[str]:
     try:
         import aiohttp
@@ -85,11 +151,18 @@ async def grab_http_title(ip: str, port: int = 80, timeout: float = 2) -> Option
     return None
 
 
-async def discover_devices(subnet: str = None, gateway: str = None) -> Dict[str, dict]:
+async def discover_devices(timeout: int = 3, subnet: str = None, gateway: str = None) -> Dict[str, dict]:
     results = {}
 
-    mdns_info = await discover_mdns(timeout=3)
+    mdns_info = await discover_mdns(timeout=max(2, timeout - 1))
     for ip, info in mdns_info.items():
         results[ip] = info
+
+    upnp_info = await discover_upnp(timeout=max(1, timeout - 1))
+    for ip, info in upnp_info.items():
+        if ip in results:
+            results[ip].update(info)
+        else:
+            results[ip] = info
 
     return results

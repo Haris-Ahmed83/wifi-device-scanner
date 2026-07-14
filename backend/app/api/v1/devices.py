@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from backend.app.scanner.scheduler import ScanScheduler
 from typing import Optional
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+from modules.blocker import block_device, unblock_device, get_blocked_devices
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -46,4 +51,36 @@ async def get_stats():
         "by_type": by_type,
         "by_vendor": by_vendor,
         "subnet": scheduler._subnet,
+        "blocked": get_blocked_devices(),
     }
+
+
+@router.post("/{ip}/block")
+async def api_block_device(ip: str):
+    if not scheduler:
+        raise HTTPException(503, "Scanner not initialized")
+    dev = None
+    for d in scheduler.devices:
+        if d.get("ip") == ip:
+            dev = d
+            break
+    if not dev:
+        raise HTTPException(404, f"Device {ip} not found")
+    gw = scheduler._gateway or "192.168.1.1"
+    result = await block_device(ip, dev["mac"], gw)
+    return result
+
+
+@router.post("/{ip}/unblock")
+async def api_unblock_device(ip: str):
+    if not scheduler:
+        raise HTTPException(503, "Scanner not initialized")
+    dev = None
+    for d in scheduler.devices:
+        if d.get("ip") == ip:
+            dev = d
+            break
+    gw = scheduler._gateway or "192.168.1.1"
+    mac = dev["mac"] if dev else ""
+    result = await unblock_device(ip, mac, gw)
+    return result

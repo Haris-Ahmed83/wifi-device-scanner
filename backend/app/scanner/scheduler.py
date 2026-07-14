@@ -11,7 +11,7 @@ from modules.network_scanner import arp_scan, get_local_network_info, resolve_ho
 from modules.fingerprinter import get_ttl, classify_device_type
 from modules.oui_lookup import lookup_vendor
 from modules.port_scanner import quick_scan
-from modules.discovery import discover_mdns, grab_http_title
+from modules.discovery import discover_devices, grab_http_title
 from backend.app.core.ws_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,11 @@ class ScanScheduler:
         mdns = mdns_map.get(ip, {})
         mdns_name = mdns.get("mdns_name")
         mdns_type = mdns.get("mdns_type")
+        upnp_server = mdns.get("upnp_server")
+        upnp_location = mdns.get("upnp_location")
         http_title = http_titles.get(ip)
 
-        final_hostname = mdns_name or hostname
+        final_hostname = upnp_server or mdns_name or hostname
         details = classification["details"]
 
         if mdns_name and mdns_name != hostname:
@@ -87,6 +89,7 @@ class ScanScheduler:
             "details": details,
             "open_ports": open_ports,
             "mdns_name": mdns_name,
+            "upnp_server": upnp_server,
             "http_title": http_title,
             "last_seen": datetime.now(timezone.utc).isoformat(),
         }
@@ -107,12 +110,12 @@ class ScanScheduler:
             })
             return []
 
-        mdns_task = asyncio.create_task(discover_mdns(timeout=3))
+        disc_task = asyncio.create_task(discover_devices(timeout=3))
         http_tasks = {}
         for d in raw_devices:
             http_tasks[d["ip"]] = asyncio.create_task(grab_http_title(d["ip"], 80, 1.5))
 
-        mdns_map = await mdns_task
+        mdns_map = await disc_task
         http_titles = {}
         for ip, task in http_tasks.items():
             try:
