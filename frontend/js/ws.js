@@ -2,9 +2,10 @@ class ScanWebSocket {
   constructor() {
     this.ws = null;
     this.reconnectAttempts = 0;
-    this.maxReconnect = 20;
+    this.maxReconnect = 50;
     this.listeners = {};
     this.statusEl = document.getElementById('ws-status');
+    this._pingTimer = null;
   }
 
   connect() {
@@ -16,22 +17,29 @@ class ScanWebSocket {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.setStatus('connected');
+      this._startPing();
     };
 
     this.ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
+        if (msg.type === 'ping') {
+          this.ws.send(JSON.stringify({ type: 'pong' }));
+          return;
+        }
+        if (msg.type === 'pong') return;
         const cbs = this.listeners[msg.type] || [];
         cbs.forEach(fn => fn(msg));
       } catch (e) {
-        console.warn('WS message parse error:', e);
+        console.warn('WS message error:', e);
       }
     };
 
     this.ws.onclose = () => {
       this.setStatus('reconnecting');
+      this._stopPing();
       if (this.reconnectAttempts < this.maxReconnect) {
-        const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
+        const delay = Math.min(1000 * Math.pow(1.3, this.reconnectAttempts), 5000);
         setTimeout(() => this.connect(), delay);
         this.reconnectAttempts++;
       } else {
@@ -40,6 +48,22 @@ class ScanWebSocket {
     };
 
     this.ws.onerror = () => this.ws.close();
+  }
+
+  _startPing() {
+    this._stopPing();
+    this._pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 20000);
+  }
+
+  _stopPing() {
+    if (this._pingTimer) {
+      clearInterval(this._pingTimer);
+      this._pingTimer = null;
+    }
   }
 
   on(type, callback) {

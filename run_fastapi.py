@@ -11,4 +11,13 @@ if __name__ == "__main__":
     print(f"Access from any device on your network at:")
     print(f"  http://{host}:{port}")
     print(f"  http://localhost:{port}")
-    uvicorn.run("backend.app.main:app", host=host, port=port, reload=False, log_level="info")
+    uvicorn.run(
+        "backend.app.main:app",
+        host=host,
+        port=port,
+        reload=False,
+        log_level="info",
+        timeout_keep_alive=120,
+        ws_ping_interval=20,
+        ws_ping_timeout=10,
+    )

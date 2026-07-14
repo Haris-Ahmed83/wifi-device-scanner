@@ -12,7 +12,7 @@ def get_ttl(ip: str) -> Optional[int]:
     try:
         if system == "windows":
             result = subprocess.run(
-                ["ping", "-n", "1", "-w", "2000", ip],
+                ["ping", "-n", "1", "-w", "500", ip],
                 capture_output=True, text=True, timeout=5
             )
             match = re.search(r"TTL=(\d+)", result.stdout, re.IGNORECASE)

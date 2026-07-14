@@ -15,7 +15,7 @@ def resolve_hostname(ip: str) -> Optional[str]:
         pass
     if platform.system().lower() == "windows":
         try:
-            result = subprocess.run(["nbtstat", "-A", ip], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(["nbtstat", "-A", ip], capture_output=True, text=True, timeout=2)
             match = re.search(r"^\s+(\S+)\s+<00>\s+UNIQUE", result.stdout, re.MULTILINE)
             if match:
                 return match.group(1)

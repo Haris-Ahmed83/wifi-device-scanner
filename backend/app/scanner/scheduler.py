@@ -8,14 +8,16 @@ from typing import Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from modules.network_scanner import arp_scan, get_local_network_info, resolve_hostname
-from modules.fingerprinter import fingerprint_device
+from modules.fingerprinter import get_ttl, classify_device_type
+from modules.oui_lookup import lookup_vendor
+from modules.port_scanner import quick_scan
 from backend.app.core.ws_manager import manager
 
 logger = logging.getLogger(__name__)
 
 
 class ScanScheduler:
-    def __init__(self, interval: int = 60):
+    def __init__(self, interval: int = 120):
         self.interval = interval
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -31,7 +33,6 @@ class ScanScheduler:
         else:
             logger.error("Could not detect network")
             return
-
         self._running = True
         self._task = asyncio.create_task(self._loop())
         logger.info(f"Background scanner started on {self._subnet}")
@@ -49,21 +50,47 @@ class ScanScheduler:
     def devices(self) -> list[dict]:
         return self._devices
 
+    async def _fingerprint_one(self, loop, ip, mac):
+        ttl = await loop.run_in_executor(None, lambda: get_ttl(ip))
+        vendor = lookup_vendor(mac)
+        open_ports = await loop.run_in_executor(None, lambda: quick_scan(ip))
+        is_gateway = (ip == self._gateway) if self._gateway else False
+        classification = classify_device_type(ip, mac, vendor, ttl, open_ports, is_gateway)
+        hostname = await loop.run_in_executor(None, lambda: resolve_hostname(ip))
+        return {
+            "ip": ip,
+            "mac": mac,
+            "hostname": hostname,
+            "vendor": vendor,
+            "ttl": ttl,
+            "os": classification["os"],
+            "device_type": classification["type"],
+            "confidence": classification["confidence"],
+            "details": classification["details"],
+            "open_ports": open_ports,
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+        }
+
     async def scan_once(self) -> list[dict]:
         loop = asyncio.get_event_loop()
         raw_devices = await loop.run_in_executor(None, lambda: arp_scan(self._subnet))
-        discovered = []
 
-        for i, dev in enumerate(raw_devices):
-            result = await loop.run_in_executor(
-                None,
-                lambda d=dev: fingerprint_device(d["ip"], d["mac"], self._gateway)
-            )
-            hostname = await loop.run_in_executor(None, lambda ip=dev["ip"]: resolve_hostname(ip))
-            result["hostname"] = hostname
-            result["last_seen"] = datetime.now(timezone.utc).isoformat()
-            discovered.append(result)
+        if not raw_devices:
+            self._devices = []
+            await manager.broadcast("scans", {
+                "type": "scan_complete",
+                "summary": {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "devices_found": 0,
+                    "subnet": self._subnet,
+                }
+            })
+            return []
 
+        tasks = [self._fingerprint_one(loop, d["ip"], d["mac"]) for d in raw_devices]
+        discovered = await asyncio.gather(*tasks)
+
+        for result in discovered:
             await manager.broadcast("scans", {
                 "type": "device_discovered",
                 "device": result,
@@ -76,20 +103,24 @@ class ScanScheduler:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "devices_found": len(discovered),
                 "subnet": self._subnet,
+                "duration_seconds": 0,
             }
         })
 
         return discovered
 
     async def _loop(self):
+        first = True
         while self._running:
             try:
+                if not first:
+                    await asyncio.sleep(self.interval)
+                first = False
                 await self.scan_once()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Scan error: {e}")
-            await asyncio.sleep(self.interval)
 
     def get_device_by_mac(self, mac: str) -> Optional[dict]:
         for d in self._devices:

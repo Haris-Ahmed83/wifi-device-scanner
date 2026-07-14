@@ -35,7 +35,7 @@ COMMON_PORTS = {
 }
 
 
-def scan_port(ip: str, port: int, timeout: float = 1.0) -> Dict:
+def scan_port(ip: str, port: int, timeout: float = 0.5) -> Dict:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -62,7 +62,7 @@ def scan_common_ports(ip: str, ports: List[int] = None) -> List[Dict]:
         ports = list(COMMON_PORTS.keys())
 
     open_ports = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         results = executor.map(lambda p: scan_port(ip, p), ports)
         for result in results:
             if result["open"]:
