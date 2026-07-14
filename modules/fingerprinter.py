@@ -70,11 +70,11 @@ def classify_device_type(
     details = []
 
     router_keywords = ["tp-link", "tplink", "d-link", "dlink", "netgear", "linksys",
-                       "asus", "cisco", "huawei", "zte", "zyxel", "arcadyan",
-                       "sagemcom", "mikrotik", "ubiquiti", "router", "broadcom"]
+                       "cisco", "zte", "zyxel", "arcadyan",
+                       "sagemcom", "mikrotik", "ubiquiti", "broadcom"]
     phone_keywords = ["tecno", "infinix", "xiaomi", "redmi", "realme", "oppo",
                       "oneplus", "vivo", "honor", "samsung", "huawei", "htc",
-                      "nokia", "motorola", "lenovo", "lg", "sony", "google"]
+                      "nokia", "motorola", "lg", "sony", "google"]
     laptop_keywords = ["dell", "hp", "hewlett", "lenovo", "apple", "asus",
                        "acer", "toshiba", "microsoft", "fujitsu", "msi"]
     printer_keywords = ["hp", "epson", "canon", "brother", "kyocera", "xerox",
@@ -158,10 +158,6 @@ def classify_device_type(
             device_type = "Mobile Device / Unknown"
             confidence = "Low"
             details.append("No open ports detected, likely a mobile device")
-        elif any(k in vendor_lower for k in router_keywords):
-            device_type = "Router/Network Device"
-            confidence = "High"
-            details.append(f"Vendor: {vendor}")
         elif any(k in vendor_lower for k in phone_keywords):
             device_type = "Smartphone"
             confidence = "Medium"
@@ -175,6 +171,10 @@ def classify_device_type(
         elif any(k in vendor_lower for k in tv_keywords):
             device_type = "Smart TV"
             confidence = "Medium"
+            details.append(f"Vendor: {vendor}")
+        elif any(k in vendor_lower for k in router_keywords):
+            device_type = "Router/Network Device"
+            confidence = "High"
             details.append(f"Vendor: {vendor}")
         else:
             device_type = f"{vendor} Device"
