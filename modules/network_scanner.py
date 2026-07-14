@@ -3,6 +3,7 @@ import subprocess
 import re
 import ipaddress
 import platform
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple
 
 
@@ -78,6 +79,32 @@ def get_arp_table() -> List[Dict]:
     return _dedup_and_filter(devices)
 
 
+def _ping_one(ip: str, timeout: int = 500) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["ping", "-n", "1", "-w", str(timeout), ip],
+            capture_output=True, text=True, timeout=2
+        )
+        if result.returncode == 0:
+            return ip
+    except Exception:
+        pass
+    return None
+
+
+def ping_sweep(network: str, timeout: int = 500) -> List[str]:
+    active = []
+    net = ipaddress.IPv4Network(network, strict=False)
+    hosts = [str(h) for h in net.hosts()][:254]
+    with ThreadPoolExecutor(max_workers=50) as ex:
+        futures = {ex.submit(_ping_one, h, timeout): h for h in hosts}
+        for f in as_completed(futures, timeout=30):
+            result = f.result()
+            if result:
+                active.append(result)
+    return active
+
+
 def _is_multicast(ip: str, mac: str) -> bool:
     if mac == "ff:ff:ff:ff:ff:ff":
         return True
@@ -101,6 +128,13 @@ def arp_scan(network: str = None) -> List[Dict]:
         else:
             return _dedup_and_filter(get_arp_table())
 
+    # Step 1: Ping-sweep to populate ARP cache (critical on Windows without Npcap)
+    try:
+        ping_sweep(network, timeout=300)
+    except Exception:
+        pass
+
+    # Step 2: Try Scapy ARP (works only with Npcap/WinPcap)
     try:
         net = ipaddress.IPv4Network(network, strict=False)
         from scapy.all import ARP, Ether, srp
@@ -109,13 +143,17 @@ def arp_scan(network: str = None) -> List[Dict]:
         broadcast = Ether(dst="ff:ff:ff:ff:ff:ff")
         packet = broadcast / arp_request
 
-        answered = srp(packet, timeout=3, verbose=False)[0]
+        answered = srp(packet, timeout=4, verbose=False)[0]
 
         for sent, received in answered:
             ip = received.psrc
             mac = received.hwsrc.lower()
             if not _is_multicast(ip, mac):
                 devices.append({"ip": ip, "mac": mac})
+
+        # If Scapy returned nothing, likely no Npcap — fallback to ARP table
+        if not devices:
+            devices = get_arp_table()
     except Exception:
         devices = get_arp_table()
 

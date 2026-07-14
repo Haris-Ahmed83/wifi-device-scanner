@@ -77,6 +77,7 @@ function renderDevices() {
           ${d.mdns_name ? '<div class="detail-row"><span class="detail-label">mDNS</span>' + d.mdns_name + '</div>' : ''}
           ${d.http_title ? '<div class="detail-row"><span class="detail-label">Web Title</span>' + d.http_title + '</div>' : ''}
           ${details ? '<div class="detail-row detail-extra">' + details + '</div>' : ''}
+          ${(d.device_type || '').toLowerCase().includes('router') ? '<div class="detail-row"><a href="http://' + d.ip + '/" target="_blank" class="router-link">\uD83D\uDD12 Open Router Admin</a></div>' : ''}
         </div>
       </div>
     `;
