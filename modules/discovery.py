@@ -68,12 +68,13 @@ async def discover_mdns(timeout: int = 4) -> Dict[str, dict]:
 async def grab_http_title(ip: str, port: int = 80, timeout: float = 2) -> Optional[str]:
     try:
         import aiohttp
+        import html
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             async with session.get(f"http://{ip}:{port}/", allow_redirects=False) as resp:
                 text = await resp.text()
                 match = re.search(r"<title[^>]*>(.*?)</title>", text, re.IGNORECASE | re.DOTALL)
                 if match:
-                    title = match.group(1).strip()[:80]
+                    title = html.unescape(match.group(1).strip()[:80])
                     if title:
                         return title
                 server = resp.headers.get("Server", "")
