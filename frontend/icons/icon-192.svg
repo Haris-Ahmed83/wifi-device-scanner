@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#1e293b"/>
+  <circle cx="96" cy="96" r="40" fill="none" stroke="#3b82f6" stroke-width="6"/>
+  <circle cx="96" cy="96" r="25" fill="none" stroke="#60a5fa" stroke-width="5"/>
+  <circle cx="96" cy="96" r="10" fill="#818cf8"/>
+  <text x="96" y="170" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="sans-serif">WiFi Scan</text>
+</svg>

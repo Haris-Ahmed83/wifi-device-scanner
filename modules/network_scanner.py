@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Tuple
 def resolve_hostname(ip: str) -> Optional[str]:
     try:
         name, _, _ = socket.gethostbyaddr(ip)
-        if name and not name.endswith(".in-addr.arpa"):
+        if name and not name.endswith(".in-addr.arpa") and name != ip:
             return name.split(".")[0]
     except Exception:
         pass
